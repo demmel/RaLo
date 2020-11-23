@@ -5,6 +5,7 @@ if (module.hot) {
 import { app, BrowserWindow } from "electron";
 import { getRouteURL } from "common/router";
 import isDev from "common/isDev";
+import * as path from "path";
 
 // global reference to mainWindow (necessary to prevent window from being garbage collected)
 let mainWindow: BrowserWindow | null;
@@ -12,6 +13,9 @@ let mainWindow: BrowserWindow | null;
 function createMainWindow() {
   const window = new BrowserWindow({
     webPreferences: { enableRemoteModule: true, nodeIntegration: true },
+    width: 500,
+    height: 600,
+    icon: path.join(__static, "icon.png"),
   });
 
   if (isDev) {
@@ -50,7 +54,6 @@ app.on("activate", () => {
   }
 });
 
-// create main BrowserWindow when electron is ready
-app.on("ready", () => {
+app.whenReady().then(() => {
   mainWindow = createMainWindow();
 });
