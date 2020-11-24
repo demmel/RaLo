@@ -7,26 +7,67 @@ import { getRouteURL } from "common/router";
 import isDev from "common/isDev";
 import * as path from "path";
 
-// global reference to mainWindow (necessary to prevent window from being garbage collected)
-let mainWindow: BrowserWindow | null;
+type AppInitState = {
+  type: "init";
+};
 
-function createMainWindow() {
+type AppOnboardingState = {
+  type: "onboarding";
+  window: BrowserWindow;
+};
+
+type AppClosingState = { type: "closing" };
+
+type AppState = AppInitState | AppOnboardingState | AppClosingState;
+
+type AppEvent =
+  | {
+      type: "init";
+    }
+  | {
+      type: "onboarding_xout";
+    };
+
+let appState: AppState = {
+  type: "init",
+};
+
+function handleAppEvent(event: AppEvent) {
+  appState = (function () {
+    switch (appState.type) {
+      case "init":
+        return reduceInitState(appState, event);
+      case "onboarding":
+        return reduceOnboardingState(appState, event);
+      case "closing":
+        return reduceClosingState(appState, event);
+    }
+  })();
+}
+
+function reduceInitState(state: AppInitState, event: AppEvent): AppState {
+  if (event.type != "init") {
+    throw new Error("'init' is the only valid app event on app init");
+  }
+
   const window = new BrowserWindow({
     webPreferences: { enableRemoteModule: true, nodeIntegration: true },
     width: 500,
     height: 600,
     icon: path.join(__static, "icon.png"),
+    useContentSize: true,
+    frame: isDev,
   });
 
   if (isDev) {
-    window.webContents.openDevTools();
+    window.webContents.openDevTools({ mode: "detach" });
   }
 
   const url = getRouteURL("onboarding");
   window.loadURL(url);
 
   window.on("closed", () => {
-    mainWindow = null;
+    handleAppEvent({ type: "onboarding_xout" });
   });
 
   window.webContents.on("devtools-opened", () => {
@@ -36,24 +77,31 @@ function createMainWindow() {
     });
   });
 
-  return window;
+  return {
+    type: "onboarding",
+    window,
+  };
 }
 
-// quit application when all windows are closed
-app.on("window-all-closed", () => {
-  // on macOS it is common for applications to stay open until the user explicitly quits
-  if (process.platform !== "darwin") {
-    app.quit();
+function reduceOnboardingState(
+  state: AppOnboardingState,
+  event: AppEvent
+): AppState {
+  switch (event.type) {
+    case "onboarding_xout":
+      app.exit();
+      return {
+        type: "closing",
+      };
+    default:
+      throw new Error(`Invalid event during onboarding: ${event.type}`);
   }
-});
+}
 
-app.on("activate", () => {
-  // on macOS it is common to re-create a window even after all windows have been closed
-  if (mainWindow === null) {
-    mainWindow = createMainWindow();
-  }
-});
+function reduceClosingState(state: AppClosingState, event: AppEvent): AppState {
+  throw new Error("Should not receive events during close");
+}
 
 app.whenReady().then(() => {
-  mainWindow = createMainWindow();
+  handleAppEvent({ type: "init" });
 });
