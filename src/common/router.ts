@@ -4,6 +4,7 @@ import * as path from "path";
 
 const routes = Object.freeze({
   onboarding: {},
+  composer: {},
 } as const);
 
 type RouteName = keyof typeof routes;
