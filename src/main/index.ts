@@ -2,7 +2,7 @@ if (module.hot) {
   module.hot.accept();
 }
 
-import { app, BrowserWindow } from "electron";
+import { Tray, Menu, app, BrowserWindow, ipcMain } from "electron";
 import { getRouteURL } from "common/router";
 import isDev from "common/isDev";
 import * as path from "path";
@@ -16,43 +16,71 @@ type AppOnboardingState = {
   window: BrowserWindow;
 };
 
+type AppRunningState = {
+  type: "running";
+  path: string;
+  tray: Tray;
+};
+
 type AppClosingState = { type: "closing" };
 
-type AppState = AppInitState | AppOnboardingState | AppClosingState;
+type AppState =
+  | AppInitState
+  | AppOnboardingState
+  | AppRunningState
+  | AppClosingState;
 
-type AppEvent =
-  | {
-      type: "init";
-    }
+type AppInitEvent = {
+  type: "init";
+};
+
+type AppOnboardingEvent =
   | {
       type: "onboarding_xout";
+    }
+  | {
+      type: "onboarding_complete";
+      path: string;
     };
+
+type AppEvent = AppInitEvent | AppOnboardingEvent;
 
 let appState: AppState = {
   type: "init",
 };
 
 function handleAppEvent(event: AppEvent) {
-  appState = (function () {
-    switch (appState.type) {
-      case "init":
-        return reduceInitState(appState, event);
-      case "onboarding":
-        return reduceOnboardingState(appState, event);
-      case "closing":
-        return reduceClosingState(appState, event);
-    }
-  })();
+  appState = reduce(appState, event);
 }
 
-function reduceInitState(state: AppInitState, event: AppEvent): AppState {
-  if (event.type != "init") {
-    throw new Error("'init' is the only valid app event on app init");
+function reduce(state: AppState, event: AppEvent): AppState {
+  switch (event.type) {
+    case "init":
+      assertStateType(state, "init", event.type);
+      return reduceInitState(state, event);
+    case "onboarding_xout":
+    case "onboarding_complete":
+      assertStateType(state, "onboarding", event.type);
+      return reduceOnboardingState(state, event);
   }
+}
 
+function assertStateType<T extends AppState["type"]>(
+  state: AppState,
+  expected: T,
+  eventType: AppEvent["type"]
+): asserts state is Extract<AppState, { type: T }> {
+  if (state.type != expected) {
+    throw new Error(
+      `Event '${eventType}' cannot be fired in the '${state.type}' state`
+    );
+  }
+}
+
+function reduceInitState(state: AppInitState, event: AppInitEvent): AppState {
   const window = new BrowserWindow({
     webPreferences: { enableRemoteModule: true, nodeIntegration: true },
-    width: 500,
+    width: 800,
     height: 600,
     icon: path.join(__static, "icon.png"),
     useContentSize: true,
@@ -77,6 +105,14 @@ function reduceInitState(state: AppInitState, event: AppEvent): AppState {
     });
   });
 
+  ipcMain.once("onboarding-complete", (event, result) => {
+    const path: string = result.path;
+    handleAppEvent({
+      type: "onboarding_complete",
+      path,
+    });
+  });
+
   return {
     type: "onboarding",
     window,
@@ -85,7 +121,7 @@ function reduceInitState(state: AppInitState, event: AppEvent): AppState {
 
 function reduceOnboardingState(
   state: AppOnboardingState,
-  event: AppEvent
+  event: AppOnboardingEvent
 ): AppState {
   switch (event.type) {
     case "onboarding_xout":
@@ -93,15 +129,28 @@ function reduceOnboardingState(
       return {
         type: "closing",
       };
-    default:
-      throw new Error(`Invalid event during onboarding: ${event.type}`);
+    case "onboarding_complete":
+      state.window.removeAllListeners();
+      state.window.close();
+      return startRunning({
+        type: "running",
+        path: event.path,
+      });
   }
 }
 
-function reduceClosingState(state: AppClosingState, event: AppEvent): AppState {
-  throw new Error("Should not receive events during close");
+function startRunning(state: Omit<AppRunningState, "tray">): AppRunningState {
+  console.log("Start");
+  const tray = new Tray(path.join(__static, "tray.png"));
+  const menu = Menu.buildFromTemplate([{ role: "quit" }]);
+  tray.setToolTip("RaLo");
+  tray.setContextMenu(menu);
+  return { ...state, tray };
 }
 
 app.whenReady().then(() => {
   handleAppEvent({ type: "init" });
 });
+
+// Don't stop when the windows close
+app.on("window-all-closed", (e: Event) => e.preventDefault());
