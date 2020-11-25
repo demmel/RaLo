@@ -62,7 +62,11 @@ function StorageSelectScreen({ path, onPathSelected }: Props) {
                 properties: ["openDirectory"],
               })
               .then(({ filePaths }) => {
-                onPathSelected(filePaths[0]);
+                const newPath = filePaths[0];
+                if (newPath == null) {
+                  return;
+                }
+                onPathSelected(newPath);
               })
           }
         >
