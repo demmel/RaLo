@@ -13,6 +13,7 @@ import {
 import { getRouteURL } from "common/router";
 import isDev from "common/isDev";
 import * as path from "path";
+import closeWindow from "common/closeWindow";
 
 type AppInitState = {
   type: "init";
@@ -60,14 +61,24 @@ type AppOnboardingEvent =
 
 type AppRunningEvent = { type: "open_composer" };
 
-type AppEvent = AppInitEvent | AppOnboardingEvent | AppRunningEvent;
+type AppComposingEvent =
+  | { type: "close_composer" }
+  | { type: "create_log"; text: string };
+
+type AppEvent =
+  | AppInitEvent
+  | AppOnboardingEvent
+  | AppRunningEvent
+  | AppComposingEvent;
 
 let appState: AppState = {
   type: "init",
 };
 
 function handleAppEvent(event: AppEvent) {
+  console.log("Event: ", event);
   appState = reduce(appState, event);
+  console.log("State:", appState);
 }
 
 function reduce(state: AppState, event: AppEvent): AppState {
@@ -82,6 +93,10 @@ function reduce(state: AppState, event: AppEvent): AppState {
     case "open_composer":
       assertStateType(state, "running", event.type);
       return reduceRunningState(state, event);
+    case "close_composer":
+    case "create_log":
+      assertStateType(state, "composing", event.type);
+      return reduceComposingState(state, event);
   }
 }
 
@@ -139,7 +154,7 @@ function reduceOnboardingState(
       return close();
     case "onboarding_complete":
       state.window.removeAllListeners();
-      state.window.close();
+      closeWindow(state.window);
       return startRunning({
         path: event.path,
       });
@@ -179,9 +194,22 @@ function reduceRunningState(
       const window = new BrowserWindow({
         webPreferences: { enableRemoteModule: true, nodeIntegration: true },
         width: 800,
-        height: 200,
+        height: 72,
         useContentSize: true,
-        frame: isDev,
+        frame: false,
+      });
+
+      window.on("closed", () => {
+        handleAppEvent({ type: "close_composer" });
+      });
+
+      ipcMain.on("resize", (e, bounds) => {
+        window.setSize(800, bounds.height, false);
+        window.center();
+      });
+
+      ipcMain.once("create_log", (_, { text }) => {
+        handleAppEvent({ type: "create_log", text });
       });
 
       const url = getRouteURL("composer");
@@ -193,6 +221,30 @@ function reduceRunningState(
         ...state,
         type: "composing",
         window,
+      };
+  }
+}
+
+function reduceComposingState(
+  state: AppComposingState,
+  event: AppComposingEvent
+): AppState {
+  switch (event.type) {
+    case "close_composer":
+      ipcMain.removeAllListeners();
+      return {
+        type: "running",
+        path: state.path,
+        tray: state.tray,
+      };
+    case "create_log":
+      ipcMain.removeAllListeners();
+      state.window.removeAllListeners();
+      closeWindow(state.window);
+      return {
+        type: "running",
+        path: state.path,
+        tray: state.tray,
       };
   }
 }
@@ -213,7 +265,10 @@ function maybeEnableWindowDevMode(window: BrowserWindow) {
 }
 
 app.whenReady().then(() => {
-  handleAppEvent({ type: "init" });
+  // handleAppEvent({ type: "init" });
+
+  appState = startRunning({ path: "." });
+  handleAppEvent({ type: "open_composer" });
 });
 
 // Don't stop when the windows close
