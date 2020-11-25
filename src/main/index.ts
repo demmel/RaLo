@@ -9,6 +9,7 @@ import isDev from "common/isDev";
 import * as pathUtils from "path";
 import closeWindow from "common/closeWindow";
 import { assertState, getState, setState } from "./AppState";
+import { loadProfiles, saveProfiles } from "common/ProfilesStorage";
 
 app.whenReady().then(() => {
   init();
@@ -21,6 +22,18 @@ app.on("window-all-closed", (e: Event) => e.preventDefault());
 app.on("will-quit", () => globalShortcut.unregisterAll());
 
 function init() {
+  assertState("init");
+
+  loadProfiles().then((res) => {
+    if (res == null) {
+      return startOnboarding();
+    }
+    const profile = res.profiles[res.selected];
+    startRunning(profile.storage.path);
+  });
+}
+
+function startOnboarding() {
   assertState("init");
 
   const window = new BrowserWindow({
@@ -77,7 +90,20 @@ function completeOnboarding(path: string) {
   const state = assertState("onboarding");
   state.window.removeAllListeners();
   closeWindow(state.window);
-  startRunning(path);
+  saveProfiles({
+    selected: 0,
+    profiles: [
+      {
+        name: "Default",
+        storage: {
+          type: "localDirectory",
+          path,
+        },
+      },
+    ],
+  }).then(() => {
+    startRunning(path);
+  });
 }
 
 function startRunning(path: string) {
@@ -140,7 +166,7 @@ function openComposer() {
   const url = getRouteURL("composer");
   window.loadURL(url);
 
-  // maybeEnableWindowDevMode(window);
+  maybeEnableWindowDevMode(window);
 
   setState({
     ...state,
