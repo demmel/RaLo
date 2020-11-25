@@ -12,43 +12,9 @@ import {
 } from "electron";
 import { getRouteURL } from "common/router";
 import isDev from "common/isDev";
-import * as path from "path";
+import * as pathUtils from "path";
 import closeWindow from "common/closeWindow";
-
-type AppInitState = {
-  type: "init";
-};
-
-type AppOnboardingState = {
-  type: "onboarding";
-  window: BrowserWindow;
-};
-
-type AppRunningState = {
-  type: "running";
-  path: string;
-  tray: Tray;
-};
-
-type AppComposingState = {
-  type: "composing";
-  window: BrowserWindow;
-  path: string;
-  tray: Tray;
-};
-
-type AppClosingState = { type: "closing" };
-
-type AppState =
-  | AppInitState
-  | AppOnboardingState
-  | AppRunningState
-  | AppComposingState
-  | AppClosingState;
-
-let appState: AppState = {
-  type: "init",
-};
+import { assertState, getState, setState } from "./AppState";
 
 app.whenReady().then(() => {
   init();
@@ -61,12 +27,13 @@ app.on("window-all-closed", (e: Event) => e.preventDefault());
 app.on("will-quit", () => globalShortcut.unregisterAll());
 
 function init() {
-  assertStateType(appState, "init");
+  assertState("init");
+
   const window = new BrowserWindow({
     webPreferences: { enableRemoteModule: true, nodeIntegration: true },
     width: 800,
     height: 600,
-    icon: path.join(__static, "icon.png"),
+    icon: pathUtils.join(__static, "icon.png"),
     useContentSize: true,
     frame: isDev,
   });
@@ -84,21 +51,10 @@ function init() {
     completeOnboarding(result.path);
   });
 
-  appState = {
+  setState({
     type: "onboarding",
     window,
-  };
-}
-
-function assertStateType<T extends AppState["type"]>(
-  state: AppState,
-  expected: T
-): asserts state is Extract<AppState, { type: T }> {
-  if (state.type != expected) {
-    throw new Error(
-      `Event '${assertStateType.caller.name}' expected '${expected}' state type but state type is currently '${state.type}'`
-    );
-  }
+  });
 }
 
 function maybeEnableWindowDevMode(window: BrowserWindow) {
@@ -118,35 +74,40 @@ function maybeEnableWindowDevMode(window: BrowserWindow) {
 
 function closeApp() {
   app.exit();
-  appState = {
+  setState({
     type: "closing",
-  };
-}
-
-function completeOnboarding(path: string) {
-  assertStateType(appState, "onboarding");
-  appState.window.removeAllListeners();
-  closeWindow(appState.window);
-  startRunning({
-    path,
   });
 }
 
-function startRunning(state: Omit<AppRunningState, "type" | "tray">) {
-  const tray = new Tray(path.join(__static, "tray.png"));
+function completeOnboarding(path: string) {
+  const state = assertState("onboarding");
+  state.window.removeAllListeners();
+  closeWindow(state.window);
+  startRunning(path);
+}
+
+function startRunning(path: string) {
+  const tray = new Tray(pathUtils.join(__static, "tray.png"));
   const menu = Menu.buildFromTemplate([{ role: "quit" }]);
   tray.setToolTip("RaLo");
   tray.setContextMenu(menu);
 
-  if (!globalShortcut.register("CmdOrCtrl+\\", () => openComposer())) {
+  if (
+    !globalShortcut.register("CmdOrCtrl+\\", () => {
+      const state = getState();
+      if (state.type === "running") {
+        openComposer();
+      }
+    })
+  ) {
     return closeApp();
   }
 
-  appState = { ...state, type: "running", tray };
+  setState({ path, type: "running", tray });
 }
 
 function openComposer() {
-  assertStateType(appState, "running");
+  const state = assertState("running");
   const window = new BrowserWindow({
     webPreferences: { enableRemoteModule: true, nodeIntegration: true },
     width: 800,
@@ -161,25 +122,25 @@ function openComposer() {
   });
 
   ipcMain.once("create_log", (_, { text }) => {
-    assertStateType(appState, "composing");
+    const state = assertState("composing");
     ipcMain.removeAllListeners();
-    appState.window.removeAllListeners();
-    closeWindow(appState.window);
-    appState = {
+    state.window.removeAllListeners();
+    closeWindow(state.window);
+    setState({
       type: "running",
-      path: appState.path,
-      tray: appState.tray,
-    };
+      path: state.path,
+      tray: state.tray,
+    });
   });
 
   window.on("closed", () => {
-    assertStateType(appState, "composing");
+    const state = assertState("composing");
     ipcMain.removeAllListeners();
-    appState = {
+    setState({
       type: "running",
-      path: appState.path,
-      tray: appState.tray,
-    };
+      path: state.path,
+      tray: state.tray,
+    });
   });
 
   const url = getRouteURL("composer");
@@ -187,9 +148,9 @@ function openComposer() {
 
   maybeEnableWindowDevMode(window);
 
-  appState = {
-    ...appState,
+  setState({
+    ...state,
     type: "composing",
     window,
-  };
+  });
 }
