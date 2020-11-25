@@ -4,7 +4,7 @@ import { createUseStyles } from "react-jss";
 import WelcomeScreen from "./WelcomeScreen";
 import StorageSelectScreen from "./StorageSelectScreen";
 import fs from "fs";
-import { ipcRenderer } from "electron";
+import ipcRenderer from "@/ipcRenderer";
 
 const useStyles = createUseStyles({
   root: {
@@ -122,8 +122,8 @@ function OnboardingFlow() {
               }
             })()}
             onClick={function () {
-              ipcRenderer.send("onboarding-complete", {
-                path: path.value,
+              ipcRenderer.send("onboarding_complete", {
+                path: path.value as string,
               });
             }}
           >

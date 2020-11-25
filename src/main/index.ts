@@ -2,14 +2,8 @@ if (module.hot) {
   module.hot.accept();
 }
 
-import {
-  Tray,
-  Menu,
-  app,
-  BrowserWindow,
-  ipcMain,
-  globalShortcut,
-} from "electron";
+import { Tray, Menu, app, BrowserWindow, globalShortcut } from "electron";
+import ipcMain from "@/ipcMain";
 import { getRouteURL } from "common/router";
 import isDev from "common/isDev";
 import * as pathUtils from "path";
@@ -47,7 +41,7 @@ function init() {
     closeApp();
   });
 
-  ipcMain.once("onboarding-complete", (event, result) => {
+  ipcMain.once("onboarding_complete", (event, result) => {
     completeOnboarding(result.path);
   });
 
@@ -146,7 +140,7 @@ function openComposer() {
   const url = getRouteURL("composer");
   window.loadURL(url);
 
-  maybeEnableWindowDevMode(window);
+  // maybeEnableWindowDevMode(window);
 
   setState({
     ...state,

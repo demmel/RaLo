@@ -10,7 +10,8 @@ import {
 import { createUseStyles } from "react-jss";
 import { LogType } from "common/types";
 import LogIcon from "./LogIcon";
-import { ipcRenderer, remote } from "electron";
+import { remote } from "electron";
+import ipcRenderer from "@/ipcRenderer";
 import closeWindow from "common/closeWindow";
 
 const CONTAINER_PADDING = 16;
